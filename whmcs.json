@@ -1,0 +1,21 @@
+{
+    "schema": "1.0",
+    "type": "whmcs-servers",
+    "name": "licensegate",
+    "license": "proprietary",
+    "category": "provisioning",
+    "description": {
+      "name": "License Gate",
+      "tagline": "An LicenseGate WHMCS Module.",
+      "long": ""
+    },
+    "support": {
+      "docs_url": "https://dsc.gg/yuemi"
+    },
+    "authors": [
+      {
+        "name": "YueMi-Development",
+        "homepage": "https:\/\/yuemi.org\/"
+      }
+    ]
+  }
