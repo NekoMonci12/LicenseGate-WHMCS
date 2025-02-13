@@ -212,37 +212,34 @@ function licensegate_TestConnection(array $params) {
     ];
 }
 
-function licensegate_GetKey($licenseKey) {
+function licensegate_GetKey($params, $licenseKey) {
     $target = '/key/' . $licenseKey;
-    $err = "";
 
     try {
         $response = licensegate_API($params, $target, [], 'GET');
 
-        if ($response['status_code'] !== 200) {
-            $status_code = $response['status_code'];
-            $solutions = [
-                400 => "Bad request - Check the input data.",
-                401 => "Unauthorized - Check authentication credentials.",
-                404 => "Not found - Ensure the licenseKey exists.",
-                500 => "Server error - Try again later."
-            ];
-            $err = "Invalid status_code received: " . $status_code . ". Possible solutions: " 
-                . ($solutions[$status_code] ?? "None.");
-        } elseif ($response['meta']['pagination']['count'] === 0) {
-            $err = "Authentication successful, but no nodes are available.";
+        // Log raw response for debugging
+        logModuleCall("License-Gate", "GetKey Raw Response", json_encode($response), "");
+
+        // Ensure response is an array
+        if (!is_array($response)) {
+            $response = json_decode(json_encode($response), true); // Convert object to array
         }
+
+        if (!isset($response['id'])) {
+            return ["success" => false, "error" => "ID not found in response"];
+        }
+
+        return [
+            "success" => true,
+            "id" => $response['id'],
+        ];
     } catch (Exception $e) {
-        licensegate_Error(__FUNCTION__, [], $e);
-        $err = $e->getMessage();
+        logModuleCall("License-Gate", "GetKey Exception", $e->getMessage(), $e->getTraceAsString());
+        return ["success" => false, "error" => $e->getMessage()];
     }
-    $jsonData = json_decode($response, true);
-    return [
-        "success" => $err === "",
-        "error" => $err,
-        "id" => $jsonData['id'] ?? null,
-    ];
 }
+
 
 function licensegate_GenerateKey($inputString) {
     $licenseHashed = md5($inputString);
@@ -302,62 +299,80 @@ function licensegate_CreateAccount(array $params)
 function licensegate_SuspendAccount(array $params)
 {
     try {
+        // Generate key input
         $inputString = $params['serviceid'] . '-' . $params['username'];
-        $keyResponse = licensegate_GetKey(licensegate_GenerateKey($inputString));
-        if ($keyResponse['success']) {
-            $endpoint = '/' . $keyResponse['id'];
-        } else {
-            throw new Exception("Failed to check account. Status code: {$response['status_code']}");
+        $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
+
+        // Validate API response
+        if (!isset($keyResponse['success']) || !$keyResponse['success'] || !isset($keyResponse['id'])) {
+            throw new Exception("Failed to check account. Response: " . json_encode($keyResponse));
         }
 
+        // Construct endpoint
+        $endpoint = '/' . $keyResponse['id'];
+
+        // Data payload
         $data = [
             "active" => false,
         ];
 
+        // Make API request
         $response = licensegate_API($params, $endpoint, $data, "PATCH");
 
-        if ($response['status_code'] !== 200) {
-            throw new Exception("Failed to suspend account. Status code: {$response['status_code']}");
+        // Validate API response
+        if (!isset($response['status_code']) || $response['status_code'] !== 200) {
+            throw new Exception("Failed to suspend account. Response: " . json_encode($response));
         }
+
     } catch (Exception $e) {
-        return $e->getMessage();
+        return "Error: " . $e->getMessage();
     }
 
-    return 'success';
+    return "success";
 }
+
 
 function licensegate_UnsuspendAccount(array $params)
 {
     try {
+        // Generate key input
         $inputString = $params['serviceid'] . '-' . $params['username'];
-        $keyResponse = licensegate_GetKey(licensegate_GenerateKey($inputString));
-        if ($keyResponse['success']) {
-            $endpoint = '/' . $keyResponse['id'];
-        } else {
-            throw new Exception("Failed to check account. Status code: {$response['status_code']}");
+        $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
+
+        // Validate API response
+        if (!isset($keyResponse['success']) || !$keyResponse['success'] || !isset($keyResponse['id'])) {
+            throw new Exception("Failed to check account. Response: " . json_encode($keyResponse));
         }
 
+        // Construct endpoint
+        $endpoint = '/' . $keyResponse['id'];
+
+        // Data payload
         $data = [
             "active" => true,
         ];
 
+        // Make API request
         $response = licensegate_API($params, $endpoint, $data, "PATCH");
 
-        if ($response['status_code'] !== 200) {
-            throw new Exception("Failed to unsuspend account. Status code: {$response['status_code']}");
+        // Validate API response
+        if (!isset($response['status_code']) || $response['status_code'] !== 200) {
+            throw new Exception("Failed to suspend account. Response: " . json_encode($response));
         }
+
     } catch (Exception $e) {
-        return $e->getMessage();
+        return "Error: " . $e->getMessage();
     }
 
-    return 'success';
+    return "success";
 }
 
 function licensegate_TerminateAccount(array $params)
 {
     try {
         $inputString = $params['serviceid'] . '-' . $params['username'];
-        $keyResponse = licensegate_GetKey(licensegate_GenerateKey($inputString));
+        $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
+
         if ($keyResponse['success']) {
             $endpoint = '/' . $keyResponse['id'];
         } else {
@@ -399,7 +414,8 @@ function licensegate_ChangePackage(array $params)
         $rinterval = licensegate_GetOption($params, 'rinterval', 'HOUR');
 
         $inputString = $params['serviceid'] . '-' . $params['username'];
-        $keyResponse = licensegate_GetKey(licensegate_GenerateKey($inputString));
+        $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
+
         if ($keyResponse['success']) {
             $endpoint = '/' . $keyResponse['id'];
         } else {
