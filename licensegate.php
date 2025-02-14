@@ -68,9 +68,7 @@ function licensegate_API(array $params, $endpoint, array $data = [], $method = "
     if($method === 'POST' || $method === 'PATCH') {
         $jsonData = json_encode($data);
         curl_setopt($curl, CURLOPT_POSTFIELDS, $jsonData);
-        if($method === 'POST') {
-            array_push($headers, "Content-Type: application/json");
-        }
+        array_push($headers, "Content-Type: application/json");
     }
 
     curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
@@ -232,7 +230,7 @@ function licensegate_GetKey($params, $licenseKey) {
 
         return [
             "success" => true,
-            "id" => $response['id'],
+            "data" => $response,
         ];
     } catch (Exception $e) {
         logModuleCall("License-Gate", "GetKey Exception", $e->getMessage(), $e->getTraceAsString());
@@ -304,20 +302,43 @@ function licensegate_SuspendAccount(array $params)
         $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
 
         // Validate API response
-        if (!isset($keyResponse['success']) || !$keyResponse['success'] || !isset($keyResponse['id'])) {
+        $success = isset($keyResponse['success']) 
+           && $keyResponse['success'] 
+           && isset($keyResponse['data']['id']);
+
+        if (!$success) {
             throw new Exception("Failed to check account. Response: " . json_encode($keyResponse));
         }
 
+
         // Construct endpoint
-        $endpoint = '/' . $keyResponse['id'];
+        $endpoint = '/' . $keyResponse['data']['id'];
+        $name = $keyResponse['data']['name'];
+        $notes = $keyResponse['data']['notes'];
+        $limit = $keyResponse['data']['ipLimit'];
+        $scope = $keyResponse['data']['licenseScope'];
+        $vtokens = $keyResponse['data']['validationPoints'];
+        $vlimit = $keyResponse['data']['validationLimit'];
+        $rinterval = $keyResponse['data']['replenishInterval'];
+        $licenseKey = $keyResponse['data']['licenseKey'];
 
         // Data payload
-        $data = [
+        $dataPayload = [
+            "licenseKey" => $licenseKey,
             "active" => false,
+            "name" => $name,
+            "notes" => $notes,
+            "ipLimit" => $limit,
+            "licenseScope" => $scope,
+            "expirationDate" => "9999-12-31T23:59:59",
+            "validationPoints" => $vtokens,
+            "validationLimit" => $vlimit,
+            "replenishAmount" => $vtokens,
+            "replenishInterval" => $rinterval,
         ];
 
         // Make API request
-        $response = licensegate_API($params, $endpoint, $data, "PATCH");
+        $response = licensegate_API($params, $endpoint, $dataPayload, "PATCH");
 
         // Validate API response
         if (!isset($response['status_code']) || $response['status_code'] !== 200) {
@@ -340,20 +361,42 @@ function licensegate_UnsuspendAccount(array $params)
         $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
 
         // Validate API response
-        if (!isset($keyResponse['success']) || !$keyResponse['success'] || !isset($keyResponse['id'])) {
+        $success = isset($keyResponse['success']) 
+            && $keyResponse['success'] 
+            && isset($keyResponse['data']['id']);
+
+        if (!$success) {
             throw new Exception("Failed to check account. Response: " . json_encode($keyResponse));
         }
 
         // Construct endpoint
-        $endpoint = '/' . $keyResponse['id'];
+        $endpoint = '/' . $keyResponse['data']['id'];
+        $name = $keyResponse['data']['name'];
+        $notes = $keyResponse['data']['notes'];
+        $limit = $keyResponse['data']['ipLimit'];
+        $scope = $keyResponse['data']['licenseScope'];
+        $vtokens = $keyResponse['data']['validationPoints'];
+        $vlimit = $keyResponse['data']['validationLimit'];
+        $rinterval = $keyResponse['data']['replenishInterval'];
+        $licenseKey = $keyResponse['data']['licenseKey'];
 
         // Data payload
-        $data = [
+        $dataPayload = [
+            "licenseKey" => $licenseKey,
             "active" => true,
+            "name" => $name,
+            "notes" => $notes,
+            "ipLimit" => $limit,
+            "licenseScope" => $scope,
+            "expirationDate" => "9999-12-31T23:59:59",
+            "validationPoints" => $vtokens,
+            "validationLimit" => $vlimit,
+            "replenishAmount" => $vtokens,
+            "replenishInterval" => $rinterval,
         ];
 
         // Make API request
-        $response = licensegate_API($params, $endpoint, $data, "PATCH");
+        $response = licensegate_API($params, $endpoint, $dataPayload, "PATCH");
 
         // Validate API response
         if (!isset($response['status_code']) || $response['status_code'] !== 200) {
@@ -374,7 +417,7 @@ function licensegate_TerminateAccount(array $params)
         $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
 
         if ($keyResponse['success']) {
-            $endpoint = '/' . $keyResponse['id'];
+            $endpoint = '/' . $keyResponse['data']['id'];
         } else {
             throw new Exception("Failed to check account. Status code: {$response['status_code']}");
         }
@@ -417,12 +460,14 @@ function licensegate_ChangePackage(array $params)
         $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
 
         if ($keyResponse['success']) {
-            $endpoint = '/' . $keyResponse['id'];
+            $endpoint = '/' . $keyResponse['data']['id'];
         } else {
             throw new Exception("Failed to check account. Status code: {$response['status_code']}");
         }
+        $licenseKey = $keyResponse['data']['licenseKey'];
 
-        $data = [
+        $dataPayload = [
+            "licenseKey" => $licenseKey,
             "active" => $active,
             "notes" => $notes,
             "ipLimit" => $limit,
@@ -434,7 +479,7 @@ function licensegate_ChangePackage(array $params)
             "replenishInterval" => $rinterval,
         ];
 
-        $response = licensegate_API($params, $endpoint, $data, "PATCH");
+        $response = licensegate_API($params, $endpoint, $dataPayload, "PATCH");
 
         if ($response['status_code'] !== 200) {
             throw new Exception("Failed to update account. Status code: {$response['status_code']}");
@@ -450,8 +495,9 @@ function licensegate_Renew(array $params)
 {
     try {
         $inputString = $params['serviceid'] . '-' . $params['username'];
+        $keyResponse = licensegate_GetKey($params, licensegate_GenerateKey($inputString));
         if ($keyResponse['success']) {
-            $endpoint = '/' . $keyResponse['id'];
+            $endpoint = '/' . $keyResponse['data']['id'];
         } else {
             throw new Exception("Failed to check account. Status code: {$response['status_code']}");
         }
@@ -470,7 +516,8 @@ function licensegate_Renew(array $params)
             $inputString = $params['serviceid'] . '-' . $params['username'];
             $endpoint = licensegate_GenerateKey($inputString);
 
-            $data = [
+            $dataPayload = [
+                "licenseKey" => $licenseKey,
                 "active" => $active,
                 "notes" => $notes,
                 "ipLimit" => $limit,
@@ -482,7 +529,7 @@ function licensegate_Renew(array $params)
                 "replenishInterval" => $rinterval,
             ];
 
-            $response = licensegate_API($params, $endpoint, $data, "PATCH");
+            $response = licensegate_API($params, $endpoint, $dataPayload, "PATCH");
 
             if ($response['status_code'] !== 200) {
                 throw new Exception("Failed to execute command. Status code: {$response['status_code']}");
@@ -501,7 +548,7 @@ function licensegate_Renew(array $params)
             $inputString = $params['serviceid'] . '-' . $params['username'];
             $licenseKey = licensegate_GenerateKey($inputString);
 
-            $data = [
+            $dataPayload = [
                 "active" => $active,
                 "name" => $name,
                 "notes" => $notes,
@@ -515,7 +562,7 @@ function licensegate_Renew(array $params)
                 "licenseKey" => $licenseKey,
             ];
 
-            $response = licensegate_API($params, $endpoint, $data, "POST");
+            $response = licensegate_API($params, $endpoint, $dataPayload, "POST");
 
             if ($response['status_code'] !== 201) {
                 throw new Exception("Failed to execute command. Status code: {$response['status_code']}");
